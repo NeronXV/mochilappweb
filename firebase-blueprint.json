@@ -1,0 +1,179 @@
+{
+  "entities": {
+    "user": {
+      "title": "User Profile",
+      "description": "User profile inside Mochilapp containing account role and administrative status.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique user ID matching Firebase Auth UID."
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name of the user."
+        },
+        "email": {
+          "type": "string",
+          "description": "User's primary email address."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["Admin", "Viajero", "Proveedor"],
+          "description": "User classification status."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "suspended"],
+          "description": "Current authorization state."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating when the account was registered."
+        }
+      },
+      "required": ["id", "name", "email", "role", "status", "createdAt"]
+    },
+    "post": {
+      "title": "Discovery Post",
+      "description": "A travel discovery post uploaded by backpackers to the feed.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique post identifier."
+        },
+        "authorId": {
+          "type": "string",
+          "description": "UID of the backer author."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Name of the author."
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Unsplash or asset image path."
+        },
+        "location": {
+          "type": "string",
+          "description": "Geographical tags."
+        },
+        "likesCount": {
+          "type": "number",
+          "description": "Number of stars or hearts received."
+        },
+        "title": {
+          "type": "string",
+          "description": "Caption or traveling commentary."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Pendiente", "Aprobado"],
+          "description": "Moderation status."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation time of the post."
+        }
+      },
+      "required": ["id", "authorId", "authorName", "imageUrl", "location", "likesCount", "title", "status", "createdAt"]
+    },
+    "payment": {
+      "title": "Payment Transaction",
+      "description": "A booking transaction containing commission details for Mochilapp.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Transaction ID."
+        },
+        "merchantName": {
+          "type": "string",
+          "description": "The target tourist provider."
+        },
+        "serviceName": {
+          "type": "string",
+          "description": "Name of tour, shelter, or booking."
+        },
+        "amount": {
+          "type": "number",
+          "description": "Total reservation price in MXN."
+        },
+        "fee": {
+          "type": "number",
+          "description": "15% platform commission cut in MXN."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Pendiente", "Completado"],
+          "description": "Payout settlement status."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Transaction date and time."
+        }
+      },
+      "required": ["id", "merchantName", "serviceName", "amount", "fee", "status", "createdAt"]
+    },
+    "promo": {
+      "title": "Promotion Campaign",
+      "description": "A push discount campaign designed by editors or vendors.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique promotion tag identifier."
+        },
+        "providerName": {
+          "type": "string",
+          "description": "The partner or business publisher."
+        },
+        "promoText": {
+          "type": "string",
+          "description": "Core incentive details."
+        },
+        "targetSubscription": {
+          "type": "string",
+          "enum": ["promos", "feed_updates", "all"],
+          "description": "Channel targeted."
+        },
+        "discountRate": {
+          "type": "number",
+          "description": "Reduction tag or percentage."
+        },
+        "clicksCount": {
+          "type": "number",
+          "description": "Simulated app notification interactions."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp indicating publication time."
+        }
+      },
+      "required": ["id", "providerName", "promoText", "targetSubscription", "discountRate", "clicksCount", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": { "$ref": "#/entities/user" },
+      "description": "Mochilapp admin dashboard users, travelers, and tourist service providers."
+    },
+    "posts": {
+      "schema": { "$ref": "#/entities/post" },
+      "description": "Backpacker discovery travel photos and comments awaiting moderation."
+    },
+    "payments": {
+      "schema": { "$ref": "#/entities/payment" },
+      "description": "Settlements and automatic commissions received on bookings."
+    },
+    "promos": {
+      "schema": { "$ref": "#/entities/promo" },
+      "description": "Marketing outreach promos simulated on live mobile targets."
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-06-01T21:01:13.828Z",
+  "project": "mochilapp-2c777",
+  "summary": {
+    "totalServices": 16,
+    "servicesWithEmail": 16,
+    "servicesWithoutEmail": 0,
+    "totalBookings": 5,
+    "bookingsWithEmail": 5,
+    "bookingsWithoutEmail": 0,
+    "bookingsMigratable": 0,
+    "bookingsNoServiceId": 0,
+    "bookingsServiceNotFound": 0,
+    "bookingsServiceNoEmail": 0
+  },
+  "servicesWithoutEmailIds": [],
+  "bookingsTroubledIds": []
+}
