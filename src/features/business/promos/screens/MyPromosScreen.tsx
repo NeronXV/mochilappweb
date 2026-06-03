@@ -5,19 +5,30 @@
 
 import React, { useState } from 'react';
 import { 
-  Megaphone, Bell, Percent, Sparkles, Send, Clock, PlayCircle, Eye 
+  Megaphone, Bell, Percent, Sparkles, Send, Clock, PlayCircle, Eye, Tag, Calendar
 } from 'lucide-react';
 import { formatDate } from '../../../../shared/utils/formatDate';
 
 interface MyPromosScreenProps {
   promos: any[];
+  services: any[];
   companyName: string;
-  onCreatePromo: (content: string, discount: string) => Promise<void>;
+  onCreatePromo: (
+    content: string, 
+    discount: string,
+    serviceId: string,
+    discountPercent: number,
+    promoCode: string,
+    expiresAt: number
+  ) => Promise<void>;
 }
 
-export default function MyPromosScreen({ promos, companyName, onCreatePromo }: MyPromosScreenProps) {
+export default function MyPromosScreen({ promos, services, companyName, onCreatePromo }: MyPromosScreenProps) {
   const [content, setContent] = useState('');
-  const [discountNum, setDiscountNum] = useState<number | ''>('');
+  const [serviceId, setServiceId] = useState('');
+  const [discountPercent, setDiscountPercent] = useState<number | ''>('');
+  const [promoCode, setPromoCode] = useState('');
+  const [expiryDate, setExpiryDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -25,23 +36,53 @@ export default function MyPromosScreen({ promos, companyName, onCreatePromo }: M
     e.preventDefault();
     setErrorMsg('');
 
+    if (!serviceId) {
+      setErrorMsg('Por favor selecciona el servicio al que aplica la promoción.');
+      return;
+    }
+
     if (!content.trim()) {
       setErrorMsg('Por favor escribe el contenido de la promoción.');
       return;
     }
 
-    if (discountNum === '' || isNaN(Number(discountNum)) || Number(discountNum) <= 0 || Number(discountNum) > 100) {
-      setErrorMsg('Especifica un porcentaje de descuento válido (entre 1% y 100%).');
+    if (
+      discountPercent === '' || 
+      isNaN(Number(discountPercent)) || 
+      Number(discountPercent) < 1 || 
+      Number(discountPercent) > 90
+    ) {
+      setErrorMsg('Especifica un porcentaje de descuento válido (entre 1% y 90%).');
       return;
     }
 
     setSubmitting(true);
     try {
-      // Guardar el descuento formateado como string con %
-      const discountStr = `${discountNum}%`;
-      await onCreatePromo(content, discountStr);
+      // Generar código promo automático si está vacío
+      const code = promoCode.trim() 
+        ? promoCode.toUpperCase().replace(/\s+/g, '') 
+        : `FLASH${discountPercent}`;
+
+      // Convertir fecha de expiración a epoch millisecond o 0 si no se selecciona
+      const expiresAt = expiryDate ? new Date(expiryDate + 'T23:59:59').getTime() : 0;
+
+      // El campo discount se guarda formateado como string con % para compatibilidad
+      const discountStr = `${discountPercent}%`;
+
+      await onCreatePromo(
+        content, 
+        discountStr,
+        serviceId,
+        Number(discountPercent),
+        code,
+        expiresAt
+      );
+
       setContent('');
-      setDiscountNum('');
+      setServiceId('');
+      setDiscountPercent('');
+      setPromoCode('');
+      setExpiryDate('');
     } catch (err: any) {
       setErrorMsg(err.message || 'Error al publicar la promoción.');
     } finally {
@@ -49,16 +90,19 @@ export default function MyPromosScreen({ promos, companyName, onCreatePromo }: M
     }
   };
 
+  // Buscar servicio seleccionado para previsualización
+  const selectedService = services.find(s => s.id === serviceId);
+
   // Previsualización dinámica de la notificación push
   const previewText = content.trim() || 'Ej: Disfruta de un tour guiado a mitad de precio este fin de semana...';
-  const previewDiscount = discountNum ? `${discountNum}%` : 'XX%';
+  const previewDiscount = discountPercent ? `${discountPercent}%` : 'XX%';
 
   return (
-    <div className="space-y-8 animate-fade-in font-sans">
+    <div className="space-y-8 animate-fade-in font-sans pb-12">
       {/* Title Header */}
       <div>
         <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Promociones y Ofertas Rápidas</h2>
-        <p className="text-xs text-slate-500 font-medium">Publica descuentos flash que se notificarán de forma directa a los viajeros en la app.</p>
+        <p className="text-xs text-slate-500 font-medium">Publica descuentos flash vinculados a tus servicios que se notificarán de forma directa a los viajeros en la app.</p>
       </div>
 
       <div className="grid md:grid-cols-12 gap-8 items-start">
@@ -67,64 +111,118 @@ export default function MyPromosScreen({ promos, companyName, onCreatePromo }: M
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
             <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
               <Sparkles className="w-5 h-5 text-emerald-600" />
-              <h3 className="font-bold text-slate-800 text-sm md:text-base">Crear Nueva Oferta</h3>
+              <h3 className="font-bold text-slate-800 text-sm md:text-base">Crear Nueva Oferta Relámpago</h3>
             </div>
 
             {errorMsg && (
-              <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-800 text-xs font-semibold">
+              <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-rose-800 text-xs font-semibold animate-fade-in">
                 {errorMsg}
               </div>
             )}
 
-            <form onSubmit={handlePublish} className="space-y-4">
-              {/* Content textarea */}
-              <div>
-                <label className="block text-[11px] font-extrabold text-slate-550 uppercase font-mono tracking-wider mb-1">
-                  Mensaje / Contenido de la Promoción
-                </label>
-                <textarea 
-                  rows={4}
-                  required
-                  maxLength={180}
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  placeholder="Redacta un mensaje atractivo para los viajeros. Máx. 180 caracteres."
-                  className="w-full px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 text-xs outline-none transition-all font-medium resize-none" 
-                />
+            {services.length === 0 ? (
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-center space-y-2">
+                <p className="text-xs text-amber-800 font-bold">Primero publica un servicio para crear una oferta.</p>
               </div>
-
-              {/* Discount rate Input */}
-              <div>
-                <label className="block text-[11px] font-extrabold text-slate-550 uppercase font-mono tracking-wider mb-1">
-                  Porcentaje de Descuento
-                </label>
-                <div className="relative">
-                  <input 
-                    type="number" 
+            ) : (
+              <form onSubmit={handlePublish} className="space-y-4">
+                {/* Service Selector */}
+                <div>
+                  <label className="block text-[11px] font-extrabold text-slate-555 uppercase font-mono tracking-wider mb-1">
+                    Servicio al que aplica *
+                  </label>
+                  <select
                     required
-                    min="1"
-                    max="100"
-                    placeholder="Ej: 15"
-                    value={discountNum}
-                    onChange={(e) => setDiscountNum(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full pl-4 pr-12 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 text-xs outline-none transition-all font-medium" 
+                    value={serviceId}
+                    onChange={(e) => setServiceId(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 text-xs outline-none transition-all font-semibold text-slate-800 cursor-pointer"
+                  >
+                    <option value="">Selecciona un servicio</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.price ? `${s.price} MXN` : 'Precio no definido'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Content textarea */}
+                <div>
+                  <label className="block text-[11px] font-extrabold text-slate-555 uppercase font-mono tracking-wider mb-1">
+                    Mensaje / Contenido de la Promoción *
+                  </label>
+                  <textarea 
+                    rows={3}
+                    required
+                    maxLength={180}
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    placeholder="Redacta un mensaje atractivo para los viajeros. Máx. 180 caracteres."
+                    className="w-full px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 text-xs outline-none transition-all font-medium resize-none text-slate-800" 
                   />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-slate-400">
-                    <Percent className="w-4 h-4 text-slate-450" />
+                </div>
+
+                {/* Discount rate Input and Promo Code Input */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-extrabold text-slate-555 uppercase font-mono tracking-wider mb-1">
+                      Porcentaje Descuento *
+                    </label>
+                    <div className="relative">
+                      <input 
+                        type="number" 
+                        required
+                        min="1"
+                        max="90"
+                        placeholder="Ej: 15"
+                        value={discountPercent}
+                        onChange={(e) => setDiscountPercent(e.target.value === '' ? '' : Number(e.target.value))}
+                        className="w-full pl-4 pr-10 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 text-xs outline-none transition-all font-semibold text-slate-800" 
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-slate-450 pointer-events-none">
+                        <Percent className="w-3.5 h-3.5" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-extrabold text-slate-555 uppercase font-mono tracking-wider mb-1">
+                      Código Promo (Opcional)
+                    </label>
+                    <input 
+                      type="text" 
+                      placeholder="FLASH15"
+                      value={promoCode}
+                      onChange={(e) => setPromoCode(e.target.value.toUpperCase().replace(/\s+/g, ''))}
+                      className="w-full px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 text-xs outline-none transition-all font-mono font-bold text-slate-800" 
+                    />
                   </div>
                 </div>
-              </div>
 
-              {/* Submit Button */}
-              <button 
-                type="submit"
-                disabled={submitting}
-                className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-105 text-white text-xs font-bold font-display rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
-              >
-                <Send className="w-4 h-4" />
-                {submitting ? 'Publicando...' : 'Publicar Promoción en Mochilapp'}
-              </button>
-            </form>
+                {/* Expiry Date input */}
+                <div>
+                  <label className="block text-[11px] font-extrabold text-slate-555 uppercase font-mono tracking-wider mb-1">
+                    Vigencia / Fecha de Expiración (Opcional)
+                  </label>
+                  <input 
+                    type="date" 
+                    value={expiryDate}
+                    onChange={(e) => setExpiryDate(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-slate-50/50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 text-xs outline-none transition-all font-semibold text-slate-800 cursor-pointer" 
+                  />
+                </div>
+
+                {/* Submit Button */}
+                <button 
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-105 text-white text-xs font-bold font-display rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Send className="w-4 h-4" />
+                  {submitting ? 'Publicando...' : 'Publicar Promoción en Mochilapp'}
+                </button>
+              </form>
+            )}
           </div>
 
           {/* Live Mobile Push Preview */}
@@ -139,7 +237,7 @@ export default function MyPromosScreen({ promos, companyName, onCreatePromo }: M
             </div>
 
             {/* Simulated Notification Bubble */}
-            <div className="bg-slate-800/80 border border-slate-700/50 rounded-2xl p-4 space-y-2 relative backdrop-blur-md">
+            <div className="bg-slate-800/80 border border-slate-700/50 rounded-2xl p-4 space-y-2.5 relative backdrop-blur-md">
               <div className="flex items-center gap-2 justify-between">
                 <div className="flex items-center gap-1.5">
                   <div className="w-6 h-6 bg-emerald-600 rounded-lg flex items-center justify-center p-0.5 text-white">
@@ -150,13 +248,19 @@ export default function MyPromosScreen({ promos, companyName, onCreatePromo }: M
                     <span className="text-[8px] text-slate-400">Notificación Mochilapp</span>
                   </div>
                 </div>
-                <span className="text-[8px] text-emerald-400 font-extrabold uppercase bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-900/30 shrink-0">
+                <span className="text-[8px] text-emerald-400 font-extrabold uppercase bg-emerald-950/80 px-2 py-0.5 rounded-full border border-emerald-900/30 shrink-0 font-mono">
                   {previewDiscount} OFF
                 </span>
               </div>
               <p className="text-[10px] text-slate-200 leading-normal font-light line-clamp-2">
                 {previewText}
               </p>
+              {selectedService && (
+                <div className="border-t border-slate-700/60 pt-2 flex items-center justify-between text-[8px] text-emerald-450 font-bold font-mono">
+                  <span>VINCULADO A: {selectedService.name.toUpperCase()}</span>
+                  <span>CÓDIGO: {promoCode.trim() ? promoCode.toUpperCase() : `FLASH${discountPercent || 'XX'}`}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -171,7 +275,7 @@ export default function MyPromosScreen({ promos, companyName, onCreatePromo }: M
               </span>
             </div>
 
-            <div className="flex-1 space-y-4 overflow-y-auto max-h-[460px] pr-1">
+            <div className="flex-1 space-y-4 overflow-y-auto max-h-[580px] pr-1">
               {promos.length === 0 ? (
                 <div className="h-full flex flex-col justify-center items-center py-24 text-center space-y-3">
                   <div className="w-12 h-12 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center text-slate-350 shadow-sm">
@@ -185,35 +289,71 @@ export default function MyPromosScreen({ promos, companyName, onCreatePromo }: M
                   </div>
                 </div>
               ) : (
-                promos.map((promo) => (
-                  <div 
-                    key={promo.id} 
-                    className="p-4 bg-slate-50 rounded-2xl border border-slate-200/60 flex flex-col gap-3 hover:border-slate-300 transition-colors"
-                  >
-                    <div className="flex justify-between items-start gap-2">
-                      <span className="text-[8px] bg-emerald-100 text-emerald-800 font-extrabold uppercase px-2.5 py-0.5 rounded-full border border-emerald-200/40">
-                        {promo.discount} Descuento
-                      </span>
+                promos.map((promo) => {
+                  // Resolver compatibilidad de servicio vinculado
+                  const linkedService = services.find(s => s.id === promo.serviceId);
+                  
+                  return (
+                    <div 
+                      key={promo.id} 
+                      className="p-4 bg-slate-50 rounded-2xl border border-slate-200/60 flex flex-col gap-3 hover:border-slate-300 transition-colors"
+                    >
+                      <div className="flex justify-between items-start gap-2">
+                        <span className="text-[8px] bg-emerald-100 text-emerald-800 font-extrabold uppercase px-2.5 py-0.5 rounded-full border border-emerald-200/40 font-mono">
+                          {promo.discount} Descuento
+                        </span>
 
-                      <div className="flex items-center gap-1.5 text-slate-400 font-mono text-[9px]">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>{formatDate(promo.timestamp)}</span>
+                        <div className="flex items-center gap-1.5 text-slate-400 font-mono text-[9px]">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>{formatDate(promo.timestamp)}</span>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-700 font-semibold leading-relaxed">
+                        {promo.content}
+                      </p>
+
+                      {/* Servicio Vinculado */}
+                      <div className="flex items-center gap-1 text-[9px] font-sans">
+                        {linkedService ? (
+                          <span className="text-emerald-700 bg-emerald-50 border border-emerald-200/50 px-2 py-0.5 rounded-md flex items-center gap-1">
+                            <Tag className="w-3 h-3 text-emerald-600" />
+                            Aplica a: <strong>{linkedService.name}</strong>
+                          </span>
+                        ) : (
+                          <span className="text-slate-550 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md italic">
+                            Sin servicio vinculado (Informativa)
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Código de promo y expiración */}
+                      {(promo.promoCode || promo.expiresAt > 0) && (
+                        <div className="flex flex-wrap items-center gap-2 border-t border-slate-200/40 pt-2.5">
+                          {promo.promoCode && (
+                            <span className="text-[8px] font-mono font-bold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded shadow-sm">
+                              CÓDIGO: {promo.promoCode}
+                            </span>
+                          )}
+                          {promo.expiresAt > 0 && (
+                            <span className="text-[8px] font-mono text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded flex items-center gap-1">
+                              <Calendar className="w-3 h-3 text-rose-500" />
+                              Expira: {formatDate(promo.expiresAt)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-1 text-[8px] font-mono text-slate-400">
+                        <span className="flex items-center gap-1 font-bold text-slate-450">
+                          <PlayCircle className="w-3.5 h-3.5 text-emerald-600" />
+                          Push Activa
+                        </span>
+                        <span>{promo.source || 'business_dashboard'}</span>
                       </div>
                     </div>
-
-                    <p className="text-xs text-slate-700 font-medium leading-relaxed">
-                      {promo.content}
-                    </p>
-
-                    <div className="flex items-center justify-between border-t border-slate-200/50 pt-2.5 text-[9px] font-mono text-slate-400">
-                      <span className="flex items-center gap-1">
-                        <PlayCircle className="w-3.5 h-3.5 text-emerald-600" />
-                        Push Simulado
-                      </span>
-                      <span>{promo.source}</span>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

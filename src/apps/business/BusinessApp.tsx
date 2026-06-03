@@ -196,7 +196,14 @@ export default function BusinessApp() {
     }
   };
 
-  const handleCreatePromo = async (content: string, discount: string) => {
+  const handleCreatePromo = async (
+    content: string, 
+    discount: string,
+    serviceId: string,
+    discountPercent: number,
+    promoCode: string,
+    expiresAt: number
+  ) => {
     if (!currentUser || !currentUser.email) return;
     try {
       await createBusinessPromo({
@@ -207,7 +214,11 @@ export default function BusinessApp() {
         ownerEmail: currentUser.email,
         createdByUid: currentUser.id,
         isActive: true,
-        source: 'business_dashboard'
+        source: 'business_dashboard',
+        serviceId,
+        discountPercent,
+        promoCode,
+        expiresAt
       });
       showToast('Promoción creada con éxito.', 'success');
     } catch (err: any) {
@@ -374,6 +385,7 @@ export default function BusinessApp() {
             {activeBusinessTab === 'promos' && (
               <MyPromosScreen 
                 promos={promos}
+                services={services}
                 companyName={currentUser.name}
                 onCreatePromo={handleCreatePromo}
               />

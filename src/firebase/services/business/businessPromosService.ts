@@ -29,6 +29,10 @@ export function subscribeMyPromos(
           ownerEmail: data.ownerEmail || ownerEmail,
           isActive: data.isActive !== false,
           source: data.source || 'business_dashboard',
+          serviceId: data.serviceId || null,
+          discountPercent: data.discountPercent ? Number(data.discountPercent) : null,
+          promoCode: data.promoCode || null,
+          expiresAt: data.expiresAt ? Number(data.expiresAt) : null,
         };
       });
       // Ordenar por fecha descendente
@@ -48,9 +52,21 @@ export async function createBusinessPromo(data: {
   createdByUid?: string;
   isActive: boolean;
   source: 'business_dashboard';
+  serviceId: string;
+  discountPercent: number;
+  promoCode: string;
+  expiresAt: number;
 }): Promise<void> {
   // Validaciones de seguridad de campos requeridos
-  if (!data.companyName || !data.content || !data.discount || !data.ownerEmail) {
+  if (
+    !data.companyName || 
+    !data.content || 
+    !data.discount || 
+    !data.ownerEmail || 
+    !data.serviceId || 
+    data.discountPercent === undefined || 
+    !data.promoCode
+  ) {
     throw new Error('Todos los campos requeridos de la promoción deben ser completados.');
   }
 
