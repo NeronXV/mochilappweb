@@ -2,13 +2,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Global Safety Net: default-deny catch-all
+    // Red de seguridad: todo lo no listado explícitamente queda denegado
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // --- PRIMITIVE / GLOBAL HELPERS ---
-    
+    // --- HELPERS ---
+
     function isSignedIn() {
       return request.auth != null;
     }
@@ -17,161 +17,131 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Valida si el usuario existe en admins/{uid} y active es true
+    function userEmail() {
+      return request.auth.token.email;
+    }
+
+    // Admin = documento en admins/{uid} con active == true
     function isAdmin() {
-      return isSignedIn() && 
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) && 
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
     }
 
-    // Valida si el usuario existe en users/{uid} y tiene rol COMPANY
-    function isCompany() {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'COMPANY';
-    }
-
-    // --- ENTITY VALIDATIONS ---
-    
-    function isValidUser(data) {
-      return data.id is string && data.id.size() <= 128 &&
-             data.name is string && data.name.size() <= 100 &&
-             data.email is string && data.email.size() <= 100 &&
-             data.role is string && (data.role == 'Admin' || data.role == 'Viajero' || data.role == 'Proveedor' || data.role == 'COMPANY' || data.role == 'TRAVELER') &&
-             data.status is string && (data.status == 'active' || data.status == 'suspended' || data.status == 'verified' || data.status == 'pending');
-    }
-
-    function isValidPost(data) {
-      return data.id is string && data.id.size() <= 128 &&
-             data.authorId is string && data.authorId.size() <= 128 &&
-             data.authorName is string && data.authorName.size() <= 100 &&
-             data.imageUrl is string && data.imageUrl.size() <= 1000 &&
-             data.location is string && data.location.size() <= 100 &&
-             data.likesCount is int &&
-             data.title is string && data.title.size() <= 1000 &&
-             data.status is string && (data.status == 'Pendiente' || data.status == 'Aprobado');
-    }
-
-    // --- ROUTES & MATCH PATTERNS ---
-
-    // Colección de Administradores
+    // --- ADMINS ---
     match /admins/{adminId} {
       allow get: if isSignedIn() && (request.auth.uid == adminId || isAdmin());
       allow list, write: if isAdmin();
     }
 
-    // Colección de Usuarios (Viajeros y Prestadores)
+    // --- USUARIOS (viajeros y empresas) ---
     match /users/{userId} {
       allow get: if isSignedIn();
-      allow list: if isAdmin(); // Bloquea barrido masivo de perfiles
-      allow create: if isSignedIn() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin());
-      allow update: if isSignedIn() && isValidUser(request.resource.data) && (
-        isAdmin() || (
-          isOwner(userId) && 
-          request.resource.data.role == resource.data.role && 
-          request.resource.data.status == resource.data.status && 
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email'])
-        )
+      allow list: if isAdmin(); // evita barrido masivo de perfiles
+      allow create: if isOwner(userId) || isAdmin();
+      // El dueño puede editar su perfil (incluido fcmToken) pero no cambiarse
+      // el rol ni auto-verificarse como negocio
+      allow update: if isAdmin() || (
+        isOwner(userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['role', 'businessVerified'])
       );
       allow delete: if isAdmin();
     }
 
-    // Colección de Servicios
+    // --- SERVICIOS ---
     match /services/{serviceId} {
-      allow read: if isSignedIn(); // Todos los logueados leen catálogo
-      allow create: if isSignedIn() && (
-        isAdmin() || (
-          isCompany() && 
-          request.resource.data.ownerEmail == request.auth.token.email &&
-          request.resource.data.isVerified == false &&
-          request.resource.data.isRecommended == false &&
-          request.resource.data.rating == 0 &&
-          request.resource.data.reviewCount == 0
-        )
+      allow read: if isSignedIn();
+      // La empresa crea servicios a su nombre, con reputación en cero
+      allow create: if isAdmin() || (
+        isSignedIn() &&
+        request.resource.data.ownerEmail == userEmail() &&
+        request.resource.data.rating == 0 &&
+        request.resource.data.reviewCount == 0 &&
+        request.resource.data.isRecommended == false
       );
-      allow update: if isSignedIn() && (
-        isAdmin() || (
-          // El dueño del servicio puede editarlo
-          resource.data.ownerEmail == request.auth.token.email &&
-          request.resource.data.ownerEmail == resource.data.ownerEmail &&
-          // Bloqueo de campos de control y reputación
-          request.resource.data.isVerified == resource.data.isVerified &&
-          request.resource.data.isRecommended == resource.data.isRecommended &&
-          request.resource.data.rating == resource.data.rating &&
-          request.resource.data.reviewCount == resource.data.reviewCount &&
-          (!('status' in resource.data) || request.resource.data.status == resource.data.status)
-        )
+      // El dueño edita su servicio sin poder tocar reputación ni dueño
+      // (rating/reviewCount los actualiza la Cloud Function onReviewCreated)
+      allow update: if isAdmin() || (
+        isSignedIn() &&
+        resource.data.ownerEmail == userEmail() &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['ownerEmail', 'ownerUid', 'rating', 'reviewCount', 'isRecommended'])
       );
       allow delete: if isAdmin();
     }
 
-    // Colección de Reservas (Bookings)
+    // --- RESERVAS ---
     match /bookings/{bookingId} {
-      allow read: if isSignedIn() && (
-        isAdmin() || 
-        resource.data.travelerEmail == request.auth.token.email || 
-        resource.data.ownerEmail == request.auth.token.email
+      // Lectura para cualquier usuario autenticado: la app necesita consultar
+      // reservas por servicio/fecha para calcular cupos disponibles.
+      // TODO endurecer: mover el conteo de cupos a un documento agregado que
+      // actualice una Cloud Function, y volver a restringir esta lectura.
+      allow read: if isSignedIn();
+      allow create: if isAdmin() || (
+        isSignedIn() && request.resource.data.travelerEmail == userEmail()
       );
-      allow create: if isSignedIn() && (
-        isAdmin() || 
-        request.resource.data.travelerEmail == request.auth.token.email
-      );
-      allow update: if isSignedIn() && (
-        isAdmin() || (
-          // El viajero solo puede cancelar su reserva
-          resource.data.travelerEmail == request.auth.token.email &&
+      allow update: if isAdmin() || (isSignedIn() && (
+        // Viajero: cancelar o confirmar el pago de SU reserva
+        (resource.data.travelerEmail == userEmail() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
-          request.resource.data.status == 'CANCELLED'
-        )
-      );
+          request.resource.data.status in ['CANCELLED', 'PAID']) ||
+        // Empresa: operar la reserva (check-in / completar)
+        (resource.data.ownerEmail == userEmail() &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'checkedInAt', 'checkedInBy', 'completedAt', 'completedBy']))
+      ));
       allow delete: if isAdmin();
     }
 
-    // Colección de Promociones
+    // --- PROMOCIONES ---
     match /promos/{promoId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && (
-        isAdmin() || (
-          isCompany() && 
-          request.resource.data.ownerEmail == request.auth.token.email &&
-          request.resource.data.source == 'business_dashboard' &&
-          request.resource.data.isActive == true
-        )
+      allow create: if isAdmin() || (
+        isSignedIn() && request.resource.data.ownerEmail == userEmail()
       );
-      allow update: if isSignedIn() && (
-        isAdmin() || 
-        // El viajero puede aumentar clics en la app móvil
+      allow update: if isAdmin() || (isSignedIn() && (
+        resource.data.ownerEmail == userEmail() ||
+        // Cualquier usuario puede aumentar el contador de clics
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clicksCount'])
-      );
-      allow delete: if isSignedIn() && (
-        isAdmin() || 
-        resource.data.ownerEmail == request.auth.token.email
+      ));
+      allow delete: if isAdmin() || (
+        isSignedIn() && resource.data.ownerEmail == userEmail()
       );
     }
 
-    // Colección de Reseñas
+    // --- RESEÑAS ---
     match /reviews/{reviewId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.authorName is string;
+      allow create: if isSignedIn() &&
+        request.resource.data.rating is int &&
+        request.resource.data.rating >= 1 &&
+        request.resource.data.rating <= 5;
       allow update, delete: if isAdmin();
     }
 
-    // Colección de Publicaciones
+    // --- PUBLICACIONES (feed social) ---
     match /posts/{postId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidPost(request.resource.data) && isOwner(request.resource.data.authorId);
-      allow update: if isSignedIn() && isValidPost(request.resource.data) && (
-        isAdmin() || (
-          isOwner(resource.data.authorId) && 
-          request.resource.data.status == resource.data.status && 
-          request.resource.data.authorId == resource.data.authorId &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likesCount', 'title', 'location', 'imageUrl'])
-        )
+      allow create: if isSignedIn();
+      // Usuarios: solo likes. Moderación (status/destacados) solo admin
+      allow update: if isAdmin() || (
+        isSignedIn() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['likes', 'likedBy', 'likesCount'])
       );
-      allow delete: if isAdmin() || (isSignedIn() && isOwner(resource.data.authorId));
+      allow delete: if isAdmin() || (
+        isSignedIn() && resource.data.authorEmail == userEmail()
+      );
     }
 
-    // Colección de Pagos (Historial Admin)
+    // --- COMENTARIOS ---
+    match /comments/{commentId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // --- PAGOS (historial admin) ---
     match /payments/{paymentId} {
       allow read, write: if isAdmin();
     }
