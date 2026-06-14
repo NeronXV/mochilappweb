@@ -37,7 +37,11 @@ service cloud.firestore {
     // --- USUARIOS (viajeros y empresas) ---
     match /users/{userId} {
       allow get: if isSignedIn();
-      allow list: if isAdmin(); // evita barrido masivo de perfiles
+      // Admin: barrido completo. Cualquier usuario autenticado: solo puede
+      // LISTAR empresas (perfiles públicos de negocios), nunca viajeros. Esto
+      // habilita los círculos del home y el contacto por WhatsApp sin exponer
+      // los perfiles de los viajeros a barridos masivos.
+      allow list: if isAdmin() || (isSignedIn() && resource.data.role == 'COMPANY');
       allow create: if isOwner(userId) || isAdmin();
       // El dueño puede editar su perfil (incluido fcmToken) pero no cambiarse
       // el rol ni auto-verificarse como negocio
@@ -86,6 +90,10 @@ service cloud.firestore {
         (resource.data.travelerEmail == userEmail() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
           request.resource.data.status in ['CANCELLED', 'PAID']) ||
+        // Viajero: check-in "Vive" en SU reserva (solo marca la visita; los
+        // MochiPuntos los acredita una Cloud Function con Admin SDK)
+        (resource.data.travelerEmail == userEmail() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['travelerCheckedInAt'])) ||
         // Empresa: operar la reserva (check-in / completar)
         (resource.data.ownerEmail == userEmail() &&
           request.resource.data.diff(resource.data).affectedKeys()
@@ -106,6 +114,17 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clicksCount'])
       ));
       allow delete: if isAdmin() || (
+        isSignedIn() && resource.data.ownerEmail == userEmail()
+      );
+    }
+
+    // --- AVISOS OPERATIVOS (negocio -> viajeros) ---
+    match /notices/{noticeId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() || (
+        isSignedIn() && request.resource.data.ownerEmail == userEmail()
+      );
+      allow update, delete: if isAdmin() || (
         isSignedIn() && resource.data.ownerEmail == userEmail()
       );
     }
@@ -139,6 +158,17 @@ service cloud.firestore {
     match /comments/{commentId} {
       allow read, create: if isSignedIn();
       allow update, delete: if isAdmin();
+    }
+
+    // --- HISTORIAS EFÍMERAS (empresa -> viajeros, 24h) ---
+    match /stories/{storyId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() || (
+        isSignedIn() && request.resource.data.ownerEmail == userEmail()
+      );
+      allow update, delete: if isAdmin() || (
+        isSignedIn() && resource.data.ownerEmail == userEmail()
+      );
     }
 
     // --- PAGOS (historial admin) ---

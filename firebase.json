@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "target": "mochilapp",
     "public": "dist",
     "ignore": [
       "firebase.json",
