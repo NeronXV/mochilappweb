@@ -86,18 +86,22 @@ service cloud.firestore {
         isSignedIn() && request.resource.data.travelerEmail == userEmail()
       );
       allow update: if isAdmin() || (isSignedIn() && (
-        // Viajero: cancelar o confirmar el pago de SU reserva
+        // Viajero: cancelar SU reserva. PAID solo lo escribe el webhook de
+        // Stripe (Admin SDK): un cliente nunca puede marcarse como pagado.
         (resource.data.travelerEmail == userEmail() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
-          request.resource.data.status in ['CANCELLED', 'PAID']) ||
+          request.resource.data.status == 'CANCELLED') ||
         // Viajero: check-in "Vive" en SU reserva (solo marca la visita; los
         // MochiPuntos los acredita una Cloud Function con Admin SDK)
         (resource.data.travelerEmail == userEmail() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['travelerCheckedInAt'])) ||
-        // Empresa: operar la reserva (check-in / completar)
+        // Empresa: operar la reserva (check-in / completar / cancelar), sin
+        // poder marcarla como pagada (status sin tocar, o a un valor operativo)
         (resource.data.ownerEmail == userEmail() &&
           request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['status', 'checkedInAt', 'checkedInBy', 'completedAt', 'completedBy']))
+            .hasOnly(['status', 'checkedInAt', 'checkedInBy', 'completedAt', 'completedBy']) &&
+          (request.resource.data.status == resource.data.status ||
+            request.resource.data.status in ['CHECKED_IN', 'COMPLETED', 'CANCELLED']))
       ));
       allow delete: if isAdmin();
     }
