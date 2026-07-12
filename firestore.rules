@@ -113,7 +113,12 @@ service cloud.firestore {
         // modalidad SÍ la escribe el cliente al crear: es el marcador de que
         // la app entiende la semántica privada (el servidor la sobreescribe
         // con el valor real del servicio al calcular el pago).
-        !request.resource.data.keys().hasAny(['montoTotal', 'salidaClaimedAt']) &&
+        // OJO: el modelo Kotlin serializa montoTotal=0 por defecto en cada
+        // create, así que se permite la LLAVE con valor 0; prohibir la llave
+        // (hasAny) bloqueaba todo create de la app nueva (sesión 12-jul).
+        !('salidaClaimedAt' in request.resource.data) &&
+        (!('montoTotal' in request.resource.data) ||
+          request.resource.data.montoTotal == 0) &&
         // createdAt honesto: ±10 min de request.time. Evita retro-fechar
         // para ganar el desempate entre PENDINGs y garantiza que el hold
         // de 30 min y expireStalePendingBookings apliquen siempre.
