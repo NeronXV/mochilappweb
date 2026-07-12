@@ -54,6 +54,25 @@ service cloud.firestore {
     }
 
     // --- SERVICIOS ---
+
+    // Coherencia modalidad ↔ pricing (spec modalidad privada/colectiva §6).
+    // Servicios legado sin `modalidad` pasan sin validar (compatibilidad).
+    function servicePricingValido() {
+      let d = request.resource.data;
+      return !('modalidad' in d) || (
+        d.modalidad == 'COLECTIVA' &&
+        d.pricing.precioPorPersona is number && d.pricing.precioPorPersona > 0 &&
+        d.pricing.capacidadMaxima is number && d.pricing.capacidadMaxima >= 0
+      ) || (
+        d.modalidad == 'PRIVADA' &&
+        d.pricing.precioBase is number && d.pricing.precioBase > 0 &&
+        d.pricing.personasIncluidas is number && d.pricing.personasIncluidas > 0 &&
+        d.pricing.precioPersonaExtra is number && d.pricing.precioPersonaExtra >= 0 &&
+        d.pricing.capacidadMaxima is number &&
+        d.pricing.capacidadMaxima >= d.pricing.personasIncluidas
+      );
+    }
+
     match /services/{serviceId} {
       allow read: if isSignedIn();
       // La empresa crea servicios a su nombre, con reputación en cero
@@ -62,7 +81,8 @@ service cloud.firestore {
         request.resource.data.ownerEmail == userEmail() &&
         request.resource.data.rating == 0 &&
         request.resource.data.reviewCount == 0 &&
-        request.resource.data.isRecommended == false
+        request.resource.data.isRecommended == false &&
+        servicePricingValido()
       );
       // El dueño edita su servicio sin poder tocar reputación ni dueño
       // (rating/reviewCount los actualiza la Cloud Function onReviewCreated)
@@ -70,7 +90,8 @@ service cloud.firestore {
         isSignedIn() &&
         resource.data.ownerEmail == userEmail() &&
         !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['ownerEmail', 'ownerUid', 'rating', 'reviewCount', 'isRecommended'])
+          .hasAny(['ownerEmail', 'ownerUid', 'rating', 'reviewCount', 'isRecommended']) &&
+        servicePricingValido()
       );
       allow delete: if isAdmin();
     }
@@ -83,7 +104,22 @@ service cloud.firestore {
       // actualice una Cloud Function, y volver a restringir esta lectura.
       allow read: if isSignedIn();
       allow create: if isAdmin() || (
-        isSignedIn() && request.resource.data.travelerEmail == userEmail()
+        isSignedIn() &&
+        request.resource.data.travelerEmail == userEmail() &&
+        // Solo nacen PENDING: PAID es exclusivo del webhook (Admin SDK)
+        request.resource.data.status == 'PENDING' &&
+        // Campos autoritativos del servidor (montoTotal = dinero,
+        // salidaClaimedAt = desempate de salidas privadas): nunca del cliente.
+        // modalidad SÍ la escribe el cliente al crear: es el marcador de que
+        // la app entiende la semántica privada (el servidor la sobreescribe
+        // con el valor real del servicio al calcular el pago).
+        !request.resource.data.keys().hasAny(['montoTotal', 'salidaClaimedAt']) &&
+        // createdAt honesto: ±10 min de request.time. Evita retro-fechar
+        // para ganar el desempate entre PENDINGs y garantiza que el hold
+        // de 30 min y expireStalePendingBookings apliquen siempre.
+        request.resource.data.createdAt is int &&
+        request.resource.data.createdAt - request.time.toMillis() < 10 * 60 * 1000 &&
+        request.time.toMillis() - request.resource.data.createdAt < 10 * 60 * 1000
       );
       allow update: if isAdmin() || (isSignedIn() && (
         // Viajero: cancelar SU reserva. PAID solo lo escribe el webhook de
